@@ -86,14 +86,48 @@ pub fn main(init: std.process.Init) !void {
                 else => |e| return e,
             };
 
-            _ = executeCommand(&command);
+            if (command.target == Base.DEC) {
+                try stdout_writer.print("{d}\n", .{command.number});
+                try stdout_writer.flush();
+                continue;
+            }
+
+            var number_buffer: [128]u8 = undefined;
+            const end_index = convertInt(&command, &number_buffer);
+
+            const answer: []u8 = (number_buffer[0..end_index]);
+            std.mem.reverse(u8, answer);
+            try stdout_writer.print("{s}\n", .{answer});
+            try stdout_writer.flush();
         }
     }
 }
 
-pub fn executeCommand(command: *Command) u64 {
-    std.debug.print("{*}\n", .{command});
-    return 69;
+pub fn convertInt(command: *Command, number_buffer: []u8) usize {
+    // std.debug.print("{d}\n", .{command.number});
+    const divisor: u64 = baseAsNumber(command.target);
+    var quotient: u64 = command.number;
+    var i: usize = 0;
+    while (quotient != 0) {
+        const remainder: u64 = quotient % divisor;
+        const ch = std.fmt.digitToChar(@intCast(remainder), std.fmt.Case.upper);
+        // std.debug.print("Divisor: {d}, Quotient: {d}, Char: {c}\n", .{ divisor, quotient, ch });
+        number_buffer[i] = ch; // number of digits in u64 will never be more than buffer size
+        quotient = quotient / divisor;
+        i += 1;
+    }
+
+    number_buffer[i] = '0';
+    i += 1;
+    number_buffer[i] =
+        switch (command.target) {
+            .HEX => 'x',
+            .OCT => 'o',
+            .BIN => 'b',
+            else => unreachable,
+        };
+    i += 1;
+    return i;
 }
 
 pub fn parseCommand(command: *Command, trimmed_input: []const u8, stdout_writer: *Io.Writer) !void {
@@ -113,7 +147,7 @@ pub fn parseCommand(command: *Command, trimmed_input: []const u8, stdout_writer:
     };
 
     const number = trimmed_input[lp_index + 1 .. rp_index];
-    std.debug.print("{d}, {s}\n", .{ number.len, number });
+    // std.debug.print("{d}, {s}\n", .{ number.len, number });
     if (number.len == 0) {
         try stdout_writer.writeAll("Invalid Command. Missing number\n");
         try stdout_writer.flush();
@@ -136,10 +170,10 @@ pub fn parseCommand(command: *Command, trimmed_input: []const u8, stdout_writer:
                     command.current = Base.DEC;
                 },
             }
-            // it has to be one or two char decimal literal or invalid
         } else {
             command.current = Base.DEC;
         }
+        // it has to be one or two char decimal literal or invalid
     } else {
         command.current = Base.DEC;
     }
@@ -171,6 +205,15 @@ pub fn parseCommand(command: *Command, trimmed_input: []const u8, stdout_writer:
         try stdout_writer.writeAll("Invalid command. Can't convert to the same base.\n");
         try stdout_writer.flush();
         return error.InvalidCommand;
+    }
+}
+
+pub fn baseAsNumber(base: Base) u64 {
+    switch (base) {
+        .HEX => return 16,
+        .DEC => return 10,
+        .OCT => return 8,
+        .BIN => return 2,
     }
 }
 
