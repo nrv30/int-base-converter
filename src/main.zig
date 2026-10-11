@@ -17,17 +17,6 @@ const Command = struct {
 };
 
 pub fn main(init: std.process.Init) !void {
-
-    // This is appropriate for anything that lives as long as the process.
-    const arena: std.mem.Allocator = init.arena.allocator();
-    // defer arena.deinit();
-
-    // Accessing command line arguments:
-    const args = try init.minimal.args.toSlice(arena);
-    for (args) |arg| {
-        std.log.info("arg: {s}", .{arg});
-    }
-
     // In order to do I/O operations need an `Io` instance.
     const io = init.io;
 
@@ -35,12 +24,7 @@ pub fn main(init: std.process.Init) !void {
     var stdout_file_writer: Io.File.Writer = .init(.stdout(), io, &stdout_buffer);
     const stdout_writer = &stdout_file_writer.interface;
 
-    // limited to working with 64-bit unsigned integer
-    // our longest possible input will be converting 64-bit binary number to another base
-    // hex(0b000...0)
-    //    ^ 64-bit binary number
-    // 3-char command + 2 char base-literal prefix + 2 parens + number + \n + \r + EOF  = 74 maximum characters
-    const max_line_size: u32 = 74;
+    const max_line_size: u32 = 128;
     var stdin_buffer: [max_line_size]u8 = undefined;
     var stdin_file_reader: Io.File.Reader = .init(.stdin(), io, &stdin_buffer);
     const stdin_reader = &stdin_file_reader.interface;
@@ -194,54 +178,6 @@ pub fn matchCurrBase(curr_base: []const u8, stdout_writer: *Io.Writer) !Base {
         return error.InvalidCommand;
     }
 }
-
-// Not using zig functions to parse numbers intentionally for educational purposes
-// pub fn parseNumber(curr_base: Base, number: []const u8, stdout_writer: *Io.Writer) !u64 {
-//     try stdout_writer.writeAll("Zig unused thing sucks ass\n");
-//     try stdout_writer.flush();
-//     // const hi = std.enums.tagName(Base, curr_base) orelse return false;
-
-//     switch (curr_base) {
-//         .HEX => {
-//             return error.InvalidCommand;
-//         },
-//         .DEC => {
-//             return try parseDecimal(number, stdout_writer);
-//         },
-//         .OCT => {
-//             return error.InvalidCommand;
-//         },
-//         .BIN => {
-//             return error.InvalidCommand;
-//         },
-//     }
-// }
-
-// pub fn parseDecimal(number: []const u8, stdout_writer: *Io.Writer) !u64 {
-//     if (number.len > 20) {
-//         try stdout_writer.print("Invalid command. Your decimal number is too big, it can have at max 20 digits. Yours had {d}.\n", .{number.len});
-//         try stdout_writer.flush();
-//         return error.InvalidCommand;
-//     }
-
-//     for (number, 0..) |ch, i| {
-//         const base: u64 = @as(u64, number.len - i - 1);
-
-//         std.debug.print("{c}, {d}\n", .{ ch, base });
-//     }
-
-//     return 69;
-// }
-
-// // Source - https://stackoverflow.com/a/55468973
-// pub fn addWillOverflow(a: u64, b: u64) bool {
-//     if (a >= 0) {
-//         if (b > (std.math.maxInt(u64) - a)) {
-//             return true;
-//         }
-//     }
-//     return false;
-// }
 
 test "simple test" {
     const gpa = std.testing.allocator;
