@@ -85,8 +85,15 @@ pub fn main(init: std.process.Init) !void {
                 },
                 else => |e| return e,
             };
+
+            _ = executeCommand(&command);
         }
     }
+}
+
+pub fn executeCommand(command: *Command) u64 {
+    std.debug.print("{*}\n", .{command});
+    return 69;
 }
 
 pub fn parseCommand(command: *Command, trimmed_input: []const u8, stdout_writer: *Io.Writer) !void {
@@ -106,32 +113,35 @@ pub fn parseCommand(command: *Command, trimmed_input: []const u8, stdout_writer:
     };
 
     const number = trimmed_input[lp_index + 1 .. rp_index];
+    std.debug.print("{d}, {s}\n", .{ number.len, number });
     if (number.len == 0) {
         try stdout_writer.writeAll("Invalid Command. Missing number\n");
         try stdout_writer.flush();
         return error.InvalidCommand;
         // now I can check if it has a base
-    } else if (number.len > 3) {
+    } else if (number.len >= 3) {
         if (number[0] == '0') {
             switch (number[1]) {
                 'x' => {
-                    command.target = Base.HEX;
+                    command.current = Base.HEX;
                 },
                 'o' => {
-                    command.target = Base.OCT;
+                    command.current = Base.OCT;
                 },
                 'b' => {
-                    command.target = Base.BIN;
+                    command.current = Base.BIN;
                 },
                 // not a base prefix, has to be decimal or invalid
                 else => {
-                    command.target = Base.DEC;
+                    command.current = Base.DEC;
                 },
             }
             // it has to be one or two char decimal literal or invalid
         } else {
-            command.target = Base.DEC;
+            command.current = Base.DEC;
         }
+    } else {
+        command.current = Base.DEC;
     }
 
     const res = std.zig.parseNumberLiteral(number);
@@ -157,9 +167,11 @@ pub fn parseCommand(command: *Command, trimmed_input: []const u8, stdout_writer:
         },
     }
 
-    const tb = std.enums.tagName(Base, command.current) orelse "";
-    const cb = std.enums.tagName(Base, command.target) orelse "";
-    std.debug.print("Target Base:{s}, Current Base: {s}, Number{d}\n", .{ tb, cb, command.number });
+    if (command.target == command.current) {
+        try stdout_writer.writeAll("Invalid command. Can't convert to the same base.\n");
+        try stdout_writer.flush();
+        return error.InvalidCommand;
+    }
 }
 
 pub fn matchTargetBase(target_base: []const u8, stdout_writer: *Io.Writer) !Base {
