@@ -1,5 +1,6 @@
 const std = @import("std");
 const Io = std.Io;
+const assert = std.debug.assert;
 
 const int_converter = @import("int_converter");
 
@@ -35,15 +36,15 @@ pub fn main(init: std.process.Init) !void {
         \\
         \\Base Commands:    hex, oct, bin, dec
         \\
-        \\Prefixes:         0x,  0o,  0b,  (no prefix)
+        \\Prefixes:         0x,  0o,  0b,
         \\
         \\USAGE 
         \\base(prefix###)
         \\
         \\EXAMPLES
         \\
-        \\"Convert 69 to binary:"    bin(69)
-        \\"Convert 0xFF to decimal:" dec(0xFF)
+        \\Convert 69 to binary:    bin(69)
+        \\Convert 0xFF to decimal: dec(0xFF)
     ;
 
     // REPL main loop
@@ -104,15 +105,14 @@ pub fn main(init: std.process.Init) !void {
 }
 
 pub fn convertInt(command: *Command, number_buffer: []u8) usize {
-    // std.debug.print("{d}\n", .{command.number});
     const divisor: u64 = baseAsNumber(command.target);
     var quotient: u64 = command.number;
     var i: usize = 0;
     while (quotient != 0) {
         const remainder: u64 = quotient % divisor;
-        const ch = std.fmt.digitToChar(@intCast(remainder), std.fmt.Case.upper);
-        // std.debug.print("Divisor: {d}, Quotient: {d}, Char: {c}\n", .{ divisor, quotient, ch });
-        number_buffer[i] = ch; // number of digits in u64 will never be more than buffer size
+        const ch = std.fmt.digitToChar(@intCast(remainder), std.fmt.Case.upper); // Only support upercase hex
+        assert(i < number_buffer.len); // number of digits in u64 will never be more than buffer size
+        number_buffer[i] = ch;
         quotient = quotient / divisor;
         i += 1;
     }
@@ -130,10 +130,13 @@ pub fn convertInt(command: *Command, number_buffer: []u8) usize {
     return i;
 }
 
-pub fn parseCommand(command: *Command, trimmed_input: []const u8, stdout_writer: *Io.Writer) !void {
+// I made stdout_writer optional because I don't want to print error messages in the case of tests
+pub fn parseCommand(command: *Command, trimmed_input: []const u8, stdout_writer: ?*Io.Writer) !void {
     const lp_index: usize = std.mem.find(u8, trimmed_input, "(") orelse { // Ohh Guardian!
-        try stdout_writer.writeAll("Invalid Command. Missing '('\n");
-        try stdout_writer.flush();
+        if (stdout_writer) |writer| {
+            try writer.writeAll("Invalid Command. Missing '('\n");
+            try writer.flush();
+        }
         return error.InvalidCommand;
     };
 
@@ -141,16 +144,19 @@ pub fn parseCommand(command: *Command, trimmed_input: []const u8, stdout_writer:
     command.target = try matchTargetBase(target_base, stdout_writer);
 
     const rp_index: usize = std.mem.find(u8, trimmed_input, ")") orelse {
-        try stdout_writer.writeAll("Invalid Command. Missing ')'\n");
-        try stdout_writer.flush();
+        if (stdout_writer) |writer| {
+            try writer.writeAll("Invalid Command. Missing ')'\n");
+            try writer.flush();
+        }
         return error.InvalidCommand;
     };
 
     const number = trimmed_input[lp_index + 1 .. rp_index];
-    // std.debug.print("{d}, {s}\n", .{ number.len, number });
     if (number.len == 0) {
-        try stdout_writer.writeAll("Invalid Command. Missing number\n");
-        try stdout_writer.flush();
+        if (stdout_writer) |writer| {
+            try writer.writeAll("Invalid Command. Missing number\n");
+            try writer.flush();
+        }
         return error.InvalidCommand;
         // now I can check if it has a base
     } else if (number.len >= 3) {
@@ -184,26 +190,34 @@ pub fn parseCommand(command: *Command, trimmed_input: []const u8, stdout_writer:
             command.number = res.int;
         },
         .big_int => {
-            try stdout_writer.writeAll("Invalid command. Your number literal was bigger than 64-bits.\n");
-            try stdout_writer.flush();
+            if (stdout_writer) |writer| {
+                try writer.writeAll("Invalid command. Your number literal was bigger than 64-bits.\n");
+                try writer.flush();
+            }
             return error.InvalidCommand;
         },
         .float => {
-            try stdout_writer.writeAll("Invalid command. Floats are not supported.\n");
-            try stdout_writer.flush();
+            if (stdout_writer) |writer| {
+                try writer.writeAll("Invalid command. Floats are not supported.\n");
+                try writer.flush();
+            }
             return error.InvalidCommand;
         },
         .failure => {
             // I don't think it's necessary to switch on this and give more details
-            try stdout_writer.writeAll("Invalid command. Your number literal is invalid.\n");
-            try stdout_writer.flush();
+            if (stdout_writer) |writer| {
+                try writer.writeAll("Invalid command. Your number literal is invalid.\n");
+                try writer.flush();
+            }
             return error.InvalidCommand;
         },
     }
 
     if (command.target == command.current) {
-        try stdout_writer.writeAll("Invalid command. Can't convert to the same base.\n");
-        try stdout_writer.flush();
+        if (stdout_writer) |writer| {
+            try writer.writeAll("Invalid command. Can't convert to the same base.\n");
+            try writer.flush();
+        }
         return error.InvalidCommand;
     }
 }
@@ -217,7 +231,7 @@ pub fn baseAsNumber(base: Base) u64 {
     }
 }
 
-pub fn matchTargetBase(target_base: []const u8, stdout_writer: *Io.Writer) !Base {
+pub fn matchTargetBase(target_base: []const u8, stdout_writer: ?*Io.Writer) !Base {
     if (std.mem.eql(u8, target_base, "hex")) {
         return Base.HEX;
     } else if (std.mem.eql(u8, target_base, "dec")) {
@@ -227,13 +241,15 @@ pub fn matchTargetBase(target_base: []const u8, stdout_writer: *Io.Writer) !Base
     } else if (std.mem.eql(u8, target_base, "bin")) {
         return Base.BIN;
     } else {
-        try stdout_writer.print("Invalid Command. {s} is not a supported base command\n", .{target_base});
-        try stdout_writer.flush();
+        if (stdout_writer) |writer| {
+            try writer.print("Invalid Command. {s} is not a supported base command\n", .{target_base});
+            try writer.flush();
+        }
         return error.InvalidCommand;
     }
 }
 
-pub fn matchCurrBase(curr_base: []const u8, stdout_writer: *Io.Writer) !Base {
+pub fn matchCurrBase(curr_base: []const u8, stdout_writer: ?*Io.Writer) !Base {
     if (std.mem.eql(u8, curr_base, "0x")) {
         return Base.HEX;
     } else if (std.mem.eql(u8, curr_base, "0d")) {
@@ -243,16 +259,27 @@ pub fn matchCurrBase(curr_base: []const u8, stdout_writer: *Io.Writer) !Base {
     } else if (std.mem.eql(u8, curr_base, "0b")) {
         return Base.BIN;
     } else {
-        try stdout_writer.print("Invalid Command. {s} is not a valid base prefix\n", .{curr_base});
-        try stdout_writer.flush();
+        if (stdout_writer) |writer| {
+            try writer.print("Invalid Command. {s} is not a valid base prefix\n", .{curr_base});
+            try writer.flush();
+        }
         return error.InvalidCommand;
     }
 }
 
+// TODO: Implement tests for all the problems on the slides
+// TODO: Implement tests for some parsing errors
 test "simple test" {
     const gpa = std.testing.allocator;
     var list: std.ArrayList(i32) = .empty;
     defer list.deinit(gpa); // Try commenting this out and see if zig detects the memory leak!
     try list.append(gpa, 42);
     try std.testing.expectEqual(@as(i32, 42), list.pop());
+}
+
+// there was a legit error with the space thing
+test "parsing test" {
+    var command: Command = undefined;
+    const thing = parseCommand(&command, "unknown_base(69)", null);
+    try std.testing.expectEqual(error.InvalidCommand, thing);
 }
