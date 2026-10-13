@@ -132,6 +132,7 @@ pub fn convertInt(command: *Command, number_buffer: []u8) usize {
 
 // I made stdout_writer optional because I don't want to print error messages in the case of tests
 pub fn parseCommand(command: *Command, trimmed_input: []const u8, stdout_writer: ?*Io.Writer) !void {
+    // std.debug.print("{s}\n", .{trimmed_input});
     const lp_index: usize = std.mem.find(u8, trimmed_input, "(") orelse { // Ohh Guardian!
         if (stdout_writer) |writer| {
             try writer.writeAll("Invalid Command. Missing '('\n");
@@ -152,13 +153,14 @@ pub fn parseCommand(command: *Command, trimmed_input: []const u8, stdout_writer:
     };
 
     const number = trimmed_input[lp_index + 1 .. rp_index];
+    // std.debug.print("{s}\n", .{number});
     if (number.len == 0) {
         if (stdout_writer) |writer| {
             try writer.writeAll("Invalid Command. Missing number\n");
             try writer.flush();
         }
         return error.InvalidCommand;
-        // now I can check if it has a base
+        // it has to have at least three characters to be a valid command w/prefix
     } else if (number.len >= 3) {
         if (number[0] == '0') {
             switch (number[1]) {
@@ -171,9 +173,12 @@ pub fn parseCommand(command: *Command, trimmed_input: []const u8, stdout_writer:
                 'b' => {
                     command.current = Base.BIN;
                 },
-                // not a base prefix, has to be decimal or invalid
                 else => {
-                    command.current = Base.DEC;
+                    if (stdout_writer) |writer| {
+                        try writer.writeAll("Invalid Command. Decimal number can't have leading zeroes\n");
+                        try writer.flush();
+                    }
+                    return error.InvalidCommand;
                 },
             }
         } else {
@@ -183,6 +188,20 @@ pub fn parseCommand(command: *Command, trimmed_input: []const u8, stdout_writer:
     } else {
         command.current = Base.DEC;
     }
+
+    if (command.current == Base.DEC) {
+        for (number) |ch| {
+            if (!std.ascii.isDigit(ch)) {
+                if (stdout_writer) |writer| {
+                    try writer.print("Invalid command. decimal number contains invalid digit {c}.\n", .{ch});
+                    try writer.flush();
+                }
+                return error.InvalidCommand;
+            }
+        }
+    }
+
+    std.debug.print("passing to func {s}\n", .{number});
 
     const res = std.zig.parseNumberLiteral(number);
     switch (res) {
@@ -221,6 +240,15 @@ pub fn parseCommand(command: *Command, trimmed_input: []const u8, stdout_writer:
         return error.InvalidCommand;
     }
 }
+
+// pub fn name() error.InvalidCommand {
+//     std.debug.println("hi I always return error\n");
+// }
+
+// pub fn reportError(message, []const u8, writer: *Io.Writer) !void {
+//     try writer.writeAll("Invalid command. Can't convert to the same base.\n");
+//     try writer.flush();
+// }
 
 pub fn baseAsNumber(base: Base) u64 {
     switch (base) {
@@ -269,17 +297,23 @@ pub fn matchCurrBase(curr_base: []const u8, stdout_writer: ?*Io.Writer) !Base {
 
 // TODO: Implement tests for all the problems on the slides
 // TODO: Implement tests for some parsing errors
-test "simple test" {
-    const gpa = std.testing.allocator;
-    var list: std.ArrayList(i32) = .empty;
-    defer list.deinit(gpa); // Try commenting this out and see if zig detects the memory leak!
-    try list.append(gpa, 42);
-    try std.testing.expectEqual(@as(i32, 42), list.pop());
-}
 
 // there was a legit error with the space thing
-test "parsing test" {
+// testing parsing
+test "random input" {
     var command: Command = undefined;
-    const thing = parseCommand(&command, "unknown_base(69)", null);
+    const thing = parseCommand(&command, "random words", null);
+    try std.testing.expectEqual(error.InvalidCommand, thing);
+}
+
+test "unsupoprted base" {
+    var command: Command = undefined;
+    const thing = parseCommand(&command, "base(69)", null);
+    try std.testing.expectEqual(error.InvalidCommand, thing);
+}
+
+test "no prefix" {
+    var command: Command = undefined;
+    const thing = parseCommand(&command, "dec(FF)", null);
     try std.testing.expectEqual(error.InvalidCommand, thing);
 }
