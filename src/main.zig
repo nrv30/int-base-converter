@@ -18,6 +18,13 @@ const Command = struct {
 };
 
 pub fn main(init: std.process.Init) !void {
+
+    // This is appropriate for anything that lives as long as the process.
+    const arena: std.mem.Allocator = init.arena.allocator();
+
+    // Accessing command line arguments:
+    const args = try init.minimal.args.toSlice(arena);
+
     // In order to do I/O operations need an `Io` instance.
     const io = init.io;
 
@@ -38,17 +45,37 @@ pub fn main(init: std.process.Init) !void {
         \\
         \\Prefixes:         0x,  0o,  0b,
         \\
-        \\USAGE 
+        \\USAGE t 
         \\base(prefix###)
         \\
         \\EXAMPLES
         \\
         \\Convert 69 to binary:    bin(69)
         \\Convert 0xFF to decimal: dec(0xFF)
+        \\
+        \\MODE
+        \\Pass your command as an argument or start up a REPL
     ;
 
+    if (args.len > 1) {
+        if (args.len > 2) {
+            try stdout_writer.writeAll("Too many arguments. To convert multiple ints efficiently try the REPL\n");
+            try stdout_writer.writeAll("Type 'help' for usage info\n");
+            try stdout_writer.flush();
+            return;
+        }
+
+        handleInput(args[1], stdout_writer) catch |err| switch (err) {
+            error.InvalidCommand => {
+                try stdout_writer.writeAll("Type 'help' for usage info\n");
+                try stdout_writer.flush();
+            },
+            else => |e| return e,
+        };
+        return;
+    }
+
     // REPL main loop
-    // This should probably be command-line utility not repl? idk I'm in too deep atp to change
     var should_quit: bool = false;
     while (!should_quit) {
         try stdout_writer.writeAll(">>> ");
@@ -77,8 +104,7 @@ pub fn main(init: std.process.Init) !void {
             continue;
         } else {
             // it's a command, still could be invalid though
-            var command: Command = undefined;
-            parseCommand(&command, trimmed_input, stdout_writer) catch |err| switch (err) {
+            handleInput(trimmed_input, stdout_writer) catch |err| switch (err) {
                 error.InvalidCommand => {
                     try stdout_writer.writeAll("Type 'help' for usage info\n");
                     try stdout_writer.flush();
@@ -86,17 +112,21 @@ pub fn main(init: std.process.Init) !void {
                 },
                 else => |e| return e,
             };
-
-            // std.debug.print("command-number: {d}\n", .{command.number});
-            var number_buffer: [128]u8 = undefined;
-            const answer = convertInt(&command, &number_buffer);
-
-            try stdout_writer.print("{s}\n", .{answer});
-            try stdout_writer.flush();
         }
     }
 }
 
+pub fn handleInput(input: []const u8, writer: *Io.Writer) !void {
+    // it's a command, still could be invalid though
+    var command: Command = undefined;
+    try parseCommand(&command, input, writer);
+
+    var number_buffer: [128]u8 = undefined;
+    const answer = convertInt(&command, &number_buffer);
+
+    try writer.print("{s}\n", .{answer});
+    try writer.flush();
+}
 // number of digits in u64 will never be more than 128. Regardless of Base.
 pub fn convertInt(command: *Command, number_buffer: []u8) []u8 {
     var answer: []u8 = undefined;
