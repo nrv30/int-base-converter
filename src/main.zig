@@ -87,51 +87,51 @@ pub fn main(init: std.process.Init) !void {
                 else => |e| return e,
             };
 
-            if (command.target == Base.DEC) {
-                try stdout_writer.print("{d}\n", .{command.number});
-                try stdout_writer.flush();
-                continue;
-            }
-
+            // std.debug.print("command-number: {d}\n", .{command.number});
             var number_buffer: [128]u8 = undefined;
-            const end_index = convertInt(&command, &number_buffer);
+            const answer = convertInt(&command, &number_buffer);
 
-            const answer: []u8 = (number_buffer[0..end_index]);
-            std.mem.reverse(u8, answer);
             try stdout_writer.print("{s}\n", .{answer});
             try stdout_writer.flush();
         }
     }
 }
 
-pub fn convertInt(command: *Command, number_buffer: []u8) usize {
-    const divisor: u64 = baseAsNumber(command.target);
-    var quotient: u64 = command.number;
-    var i: usize = 0;
-    while (quotient != 0) {
-        const remainder: u64 = quotient % divisor;
-        const ch = std.fmt.digitToChar(@intCast(remainder), std.fmt.Case.upper); // Only support upercase hex
-        assert(i < number_buffer.len); // number of digits in u64 will never be more than buffer size
-        number_buffer[i] = ch;
-        quotient = quotient / divisor;
-        i += 1;
-    }
+// number of digits in u64 will never be more than 128. Regardless of Base.
+pub fn convertInt(command: *Command, number_buffer: []u8) []u8 {
+    var answer: []u8 = undefined;
+    if (command.target != Base.DEC) {
+        const divisor: u64 = baseAsNumber(command.target);
+        var quotient: u64 = command.number;
+        var i: usize = 0;
+        while (quotient != 0) {
+            const remainder: u64 = quotient % divisor;
+            const ch = std.fmt.digitToChar(@intCast(remainder), std.fmt.Case.upper);
+            assert(i < number_buffer.len); //
+            number_buffer[i] = ch;
+            quotient = quotient / divisor;
+            i += 1;
+        }
 
-    number_buffer[i] = '0';
-    i += 1;
-    number_buffer[i] =
-        switch (command.target) {
-            .HEX => 'x',
-            .OCT => 'o',
-            .BIN => 'b',
-            else => unreachable,
-        };
-    i += 1;
-    return i;
+        number_buffer[i] =
+            switch (command.target) {
+                .HEX => 'x',
+                .OCT => 'o',
+                .BIN => 'b',
+                else => unreachable,
+            };
+        i += 1;
+        number_buffer[i] = '0';
+        i += 1;
+        answer = number_buffer[0..i];
+        std.mem.reverse(u8, answer);
+    } else {
+        answer = std.fmt.bufPrint(number_buffer, "{d}", .{command.number}) catch unreachable;
+    }
+    return answer;
 }
 
 pub fn parseCommand(command: *Command, trimmed_input: []const u8, writer: *Io.Writer) !void {
-    // std.debug.print("{s}\n", .{trimmed_input});
     const lp_index: usize = std.mem.find(u8, trimmed_input, "(") orelse { // Ohh Guardian!
         return reportInvalidCommand("Missing '('", writer);
     };
@@ -144,7 +144,6 @@ pub fn parseCommand(command: *Command, trimmed_input: []const u8, writer: *Io.Wr
     };
 
     const number = trimmed_input[lp_index + 1 .. rp_index];
-    // std.debug.print("{s}\n", .{number});
     if (number.len == 0) {
         return reportInvalidCommand("Missing number", writer);
     } else if (number.len >= 3) { // it has to have at least three characters to be a valid command w/prefix
@@ -178,8 +177,6 @@ pub fn parseCommand(command: *Command, trimmed_input: []const u8, writer: *Io.Wr
             }
         }
     }
-
-    // std.debug.print("passing to func {s}\n", .{number});
 
     const res = std.zig.parseNumberLiteral(number);
     switch (res) {
@@ -250,10 +247,74 @@ pub fn matchCurrBase(curr_base: []const u8, writer: *Io.Writer) !Base {
     }
 }
 
-// TODO: Implement tests for all the problems on the slides
-// TODO: Implement tests for some parsing errors
+pub fn debugln(message: []const u8) void {
+    std.debug.print("{s}\n", .{message});
+}
 
-// there was a legit error with the space thing
+// testing converting
+test "exercise 1" {
+    var twriter = Io.Writer.Discarding.init(&.{});
+    var command: Command = undefined;
+    _ = try parseCommand(&command, "dec(0b1_0101_1111)", &twriter.writer);
+    var number_buffer: [128]u8 = undefined;
+    const answer = convertInt(&command, &number_buffer);
+    try std.testing.expectEqualStrings("351", answer);
+}
+
+test "exercise 2" {
+    var twriter = Io.Writer.Discarding.init(&.{});
+    var command: Command = undefined;
+    _ = try parseCommand(&command, "dec(0o7016)", &twriter.writer);
+    var number_buffer: [128]u8 = undefined;
+    const answer = convertInt(&command, &number_buffer);
+    try std.testing.expectEqualStrings("3598", answer);
+}
+
+test "exercise 3" {
+    var twriter = Io.Writer.Discarding.init(&.{});
+    var command: Command = undefined;
+    _ = try parseCommand(&command, "dec(0x2AE0B)", &twriter.writer);
+    var number_buffer: [128]u8 = undefined;
+    const answer = convertInt(&command, &number_buffer);
+    try std.testing.expectEqualStrings("175627", answer);
+}
+
+test "exercise 4" {
+    var twriter = Io.Writer.Discarding.init(&.{});
+    var command: Command = undefined;
+    _ = try parseCommand(&command, "hex(0b1110_0101)", &twriter.writer);
+    var number_buffer: [128]u8 = undefined;
+    const answer = convertInt(&command, &number_buffer);
+    try std.testing.expectEqualStrings("0xE5", answer);
+}
+
+test "exercise 5" {
+    var twriter = Io.Writer.Discarding.init(&.{});
+    var command: Command = undefined;
+    _ = try parseCommand(&command, "oct(12345)", &twriter.writer);
+    var number_buffer: [128]u8 = undefined;
+    const answer = convertInt(&command, &number_buffer);
+    try std.testing.expectEqualStrings("0o30071", answer);
+}
+
+test "exercise 6" {
+    var twriter = Io.Writer.Discarding.init(&.{});
+    var command: Command = undefined;
+    _ = try parseCommand(&command, "hex(177130)", &twriter.writer);
+    var number_buffer: [128]u8 = undefined;
+    const answer = convertInt(&command, &number_buffer);
+    try std.testing.expectEqualStrings("0x2B3EA", answer);
+}
+
+test "exercise 7" {
+    var twriter = Io.Writer.Discarding.init(&.{});
+    var command: Command = undefined;
+    _ = try parseCommand(&command, "bin(241)", &twriter.writer);
+    var number_buffer: [128]u8 = undefined;
+    const answer = convertInt(&command, &number_buffer);
+    try std.testing.expectEqualStrings("0b11110001", answer);
+}
+
 // testing parsing
 test "random input" {
     var twriter = Io.Writer.Discarding.init(&.{});
@@ -273,5 +334,54 @@ test "no prefix" {
     var twriter = Io.Writer.Discarding.init(&.{});
     var command: Command = undefined;
     const thing = parseCommand(&command, "dec(FF)", &twriter.writer);
+    try std.testing.expectEqual(error.InvalidCommand, thing);
+}
+
+test "same base" {
+    var twriter = Io.Writer.Discarding.init(&.{});
+    var command: Command = undefined;
+    const thing = parseCommand(&command, "dec(420)", &twriter.writer);
+    try std.testing.expectEqual(error.InvalidCommand, thing);
+}
+
+test "no number" {
+    var twriter = Io.Writer.Discarding.init(&.{});
+    var command: Command = undefined;
+    const thing = parseCommand(&command, "dec()", &twriter.writer);
+    try std.testing.expectEqual(error.InvalidCommand, thing);
+}
+
+test "wrong prefix" {
+    var twriter = Io.Writer.Discarding.init(&.{});
+    var command: Command = undefined;
+    const thing = parseCommand(&command, "dec(0AFF)", &twriter.writer);
+    try std.testing.expectEqual(error.InvalidCommand, thing);
+}
+
+test "big number" {
+    var twriter = Io.Writer.Discarding.init(&.{});
+    var command: Command = undefined;
+    const thing = parseCommand(&command, "bin(18446744073709551616)", &twriter.writer);
+    try std.testing.expectEqual(error.InvalidCommand, thing);
+}
+
+test "negative number" {
+    var twriter = Io.Writer.Discarding.init(&.{});
+    var command: Command = undefined;
+    const thing = parseCommand(&command, "-10", &twriter.writer);
+    try std.testing.expectEqual(error.InvalidCommand, thing);
+}
+
+test "float" {
+    var twriter = Io.Writer.Discarding.init(&.{});
+    var command: Command = undefined;
+    const thing = parseCommand(&command, "bin(10.5)", &twriter.writer);
+    try std.testing.expectEqual(error.InvalidCommand, thing);
+}
+
+test "unequal parens" {
+    var twriter = Io.Writer.Discarding.init(&.{});
+    var command: Command = undefined;
+    const thing = parseCommand(&command, "bin((0xFF)", &twriter.writer);
     try std.testing.expectEqual(error.InvalidCommand, thing);
 }
